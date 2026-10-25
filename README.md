@@ -9,8 +9,8 @@ Work locally, download a revision, edit, and explicitly upload against that revi
 
 1. Storage and revision API (this layer): SQLite persistence, unchanged project
    bytes, bounded requests, strong revision ETags, transactional writes, access control.
-2. Authentication: configure bearer identities, attach the trusted principal,
-   and enable the server binary. The bare router fails closed without an identity.
+2. Authentication: provision bearer identities and enable the server binary.
+   The bare router fails closed without an identity; the binary always uses auth.
 3. Client integration: connect the local editor's serializer and expose conflicts
    to the user after the local core/editor workflow is available.
 
@@ -25,6 +25,85 @@ not a proposed Pace scene format. Structurally invalid scenes that are valid JSO
 cannot yet be rejected: integrate the core's canonical validator when available.
 The transport does not execute scripts, dereference asset URLs, or unpack archives.
 External assets are not uploaded by this API.
+
+## Run the authenticated server
+
+Generate independent, high-entropy tokens per user/device; use at least 32 random
+bytes. The server config contains only SHA-256 digests, never plaintext tokens.
+This is operator-provisioned bearer authentication, not a password/login service.
+The following creates two local test identities with restricted file permissions:
+
+```sh
+umask 077
+python3 - <<'PY'
+import hashlib, json, pathlib, secrets
+tokens = []
+for principal in ("alice", "bob"):
+    token = secrets.token_urlsafe(32)
+    pathlib.Path(principal + ".token").write_text(token)
+    tokens.append({"principal": principal, "sha256": hashlib.sha256(token.encode()).hexdigest()})
+pathlib.Path("auth.json").write_text(json.dumps({"tokens": tokens}))
+PY
+PACE_AUTH_FILE=./auth.json PACE_DATABASE=./pace-projects.sqlite3 cargo run --locked
+```
+
+`PACE_AUTH_FILE` is mandatory and must contain 1–1024 entries. Principal IDs are
+1–128 ASCII letters, digits, or `-_.@`. `PACE_DATABASE` defaults to
+`pace-projects.sqlite3`; use a persistent, access-restricted data directory.
+`PACE_BIND` defaults to `127.0.0.1:3000`. TLS must be terminated by a trusted
+reverse proxy before exposing the service beyond localhost; bearer tokens confer
+access to anyone holding them. Do not log authorization headers. There is no
+permissive CORS policy or browser login flow in this layer.
+
+For token rotation, add a new digest with the **same principal**, distribute that
+token securely, remove the old digest, and restart. Multiple distinct digests may
+map to the same principal; duplicate digests and malformed configs are rejected.
+Principals remain stable across token rotation so ownership and membership survive.
+Revocation takes effect for new requests after restart. Existing in-flight requests
+may complete. Only operators can provision identities; owners may grant project
+access to principal IDs, including IDs provisioned later. Recheck spelling before
+granting access. Do not commit token files or operator config.
+
+## Two-client HTTP walkthrough
+
+Use a JSON file produced by the local editor when its serializer is available.
+For a transport-only smoke test, `printf '{}\n' > project.json` is sufficient;
+this does not establish scene-format compatibility. These commands use `curl`
+and `jq`, with the local token files created above:
+
+```sh
+BASE=http://127.0.0.1:3000
+ALICE_TOKEN=$(cat alice.token)
+BOB_TOKEN=$(cat bob.token)
+
+# Alice creates and shares a private project with Bob.
+ID=$(curl --fail-with-body -sS -X POST "$BASE/v1/projects" \
+  -H "Authorization: Bearer $ALICE_TOKEN" -H 'Content-Type: application/json' \
+  --data-binary @project.json | jq -r .id)
+curl --fail-with-body -sS -X PUT "$BASE/v1/projects/$ID/members/bob" \
+  -H "Authorization: Bearer $ALICE_TOKEN" -H 'Content-Type: application/json' \
+  --data '{"role":"writer"}'
+
+# Bob downloads exact bytes and the accompanying ETag, then edits bob.json locally.
+curl --fail-with-body -sS -D bob.headers -o bob.json "$BASE/v1/projects/$ID" \
+  -H "Authorization: Bearer $BOB_TOKEN"
+ETAG=$(awk 'tolower($1)=="etag:" {gsub("\r", "", $2); print $2}' bob.headers)
+curl --fail-with-body -sS -i -X PUT "$BASE/v1/projects/$ID" \
+  -H "Authorization: Bearer $BOB_TOKEN" -H 'Content-Type: application/json' \
+  -H "If-Match: $ETAG" --data-binary @bob.json
+
+# Reusing the old ETag deliberately yields 412; no data is overwritten.
+curl -sS -i -X PUT "$BASE/v1/projects/$ID" \
+  -H "Authorization: Bearer $ALICE_TOKEN" -H 'Content-Type: application/json' \
+  -H "If-Match: $ETAG" --data-binary @project.json
+unset ALICE_TOKEN BOB_TOKEN
+```
+
+Clients must keep the downloaded body and its ETag together. Keep credentials in
+the platform credential store; never put them in the scene document or a URL.
+On a connection failure after uploading, the outcome may be unknown: download
+the remote snapshot to inspect it before retrying. There is no automatic retry
+or idempotency key for project creation.
 
 ## HTTP API
 
@@ -82,4 +161,7 @@ cargo clippy --locked --all-targets -- -D warnings
 
 Integration tests use real HTTP sockets and temporary SQLite files, including
 independent database connections racing the same revision, two-client exchange,
-reopen persistence, malformed/oversized payloads, and required preconditions.
+process kill/restart persistence of contents/revisions/ACLs, denied access,
+reader/writer/owner permissions, malformed/oversized (including chunked) payloads,
+and required preconditions. These are transport tests; the editor's actual
+save/load round trip remains a prerequisite for client integration.

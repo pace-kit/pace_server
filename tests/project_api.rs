@@ -10,7 +10,7 @@ async fn two_clients_exchange_exact_bytes_and_stale_writes_conflict() {
     let dir = tempdir().unwrap();
     let server = Server::start(&dir.path().join("projects.db")).await;
     let (url, revision) = server.project().await;
-    let second_client = Client::new();
+    let second_client = common::client(common::ALICE);
     let response = second_client.get(&url).send().await.unwrap();
     assert_eq!(response.status(), 200);
     assert_eq!(response.headers()["ETag"], revision);
