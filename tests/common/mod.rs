@@ -2,13 +2,35 @@
 
 use std::path::Path;
 
-use axum::Extension;
-use pace_server::{router, Principal, Store};
+use pace_server::{authenticated_router, Auth, Store};
 use reqwest::{Client, Response};
+use sha2::{Digest, Sha256};
 use tokio::{net::TcpListener, task::JoinHandle};
 
 pub const PROJECT: &[u8] =
     b"{ \"scene\": {\"nodes\":[]}, \"extension\": {\"large\":123456789012345678901234567890} }\n";
+
+pub const ALICE: &str = "alice-test-token-00000000000000000000000000000000";
+pub const BOB: &str = "bob-test-token-0000000000000000000000000000000000";
+pub const EVE: &str = "eve-test-token-0000000000000000000000000000000000";
+
+pub fn auth_json() -> Vec<u8> {
+    let tokens: Vec<_> = [("alice", ALICE), ("bob", BOB), ("eve", EVE)].into_iter()
+        .map(|(principal, token)| serde_json::json!({"principal":principal,"sha256": format!("{:x}", Sha256::digest(token.as_bytes()))})).collect();
+    serde_json::to_vec(&serde_json::json!({"tokens":tokens})).unwrap()
+}
+
+pub fn client(token: &str) -> Client {
+    let mut headers = reqwest::header::HeaderMap::new();
+    let mut value = reqwest::header::HeaderValue::from_str(&format!("Bearer {token}")).unwrap();
+    value.set_sensitive(true);
+    headers.insert(reqwest::header::AUTHORIZATION, value);
+    Client::builder()
+        .default_headers(headers)
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap()
+}
 
 pub struct Server {
     pub base: String,
@@ -18,13 +40,16 @@ pub struct Server {
 
 impl Server {
     pub async fn start(path: &Path) -> Self {
-        let app = router(Store::open(path).unwrap()).layer(Extension(Principal("alice".into())));
+        let app = authenticated_router(
+            Store::open(path).unwrap(),
+            Auth::from_json(&auth_json()).unwrap(),
+        );
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
         let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         Self {
             base,
-            client: Client::new(),
+            client: client(ALICE),
             task,
         }
     }

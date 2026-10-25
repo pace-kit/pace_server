@@ -16,8 +16,11 @@ use crate::{
 
 /// Without a trusted layer inserting Principal, all project routes fail closed.
 pub fn router(store: Store) -> Router {
+    project_routes(store).route("/health", get(|| async { "ok" }))
+}
+
+pub(crate) fn project_routes(store: Store) -> Router {
     Router::new()
-        .route("/health", get(|| async { "ok" }))
         .route("/v1/projects", post(create))
         .route("/v1/projects/{id}", get(download).put(upload))
         .route(
@@ -162,12 +165,7 @@ struct Member {
 }
 
 fn member_id(member: String) -> Result<String, ApiError> {
-    if member.is_empty()
-        || member.len() > 128
-        || !member
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b"-_.@".contains(&b))
-    {
+    if !crate::auth::valid_principal(&member) {
         return Err(ApiError::bad_request(
             "invalid_member",
             "Invalid principal identifier",
