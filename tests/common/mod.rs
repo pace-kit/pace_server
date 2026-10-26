@@ -7,8 +7,13 @@ use reqwest::{Client, Response};
 use sha2::{Digest, Sha256};
 use tokio::{net::TcpListener, task::JoinHandle};
 
-pub const PROJECT: &[u8] =
-    b"{ \"scene\": {\"nodes\":[]}, \"extension\": {\"large\":123456789012345678901234567890} }\n";
+pub const PROJECT: &[u8] = include_bytes!("../fixtures/core-scene-v1.json");
+
+pub fn edited(title: &str) -> Vec<u8> {
+    let mut value: serde_json::Value = serde_json::from_slice(PROJECT).unwrap();
+    value["title"] = title.into();
+    serde_json::to_vec_pretty(&value).unwrap()
+}
 
 pub const ALICE: &str = "alice-test-token-00000000000000000000000000000000";
 pub const BOB: &str = "bob-test-token-0000000000000000000000000000000000";
@@ -43,7 +48,8 @@ impl Server {
         let app = authenticated_router(
             Store::open(path).unwrap(),
             Auth::from_json(&auth_json()).unwrap(),
-        );
+        )
+        .layer(pace_server::cors::cors("https://editor.example").unwrap());
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
         let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });

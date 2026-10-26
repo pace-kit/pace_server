@@ -65,8 +65,8 @@ impl Store {
     }
 
     pub async fn create(&self, principal: Principal, body: Vec<u8>) -> Result<Snapshot, ApiError> {
-        validate_project(&body)?;
         self.run(move |connection| {
+            validate_project(&body)?;
             let id = Uuid::new_v4().to_string();
             connection.execute(
                 "INSERT INTO projects (id, owner, revision, body) VALUES (?1, ?2, 1, ?3)",
@@ -99,8 +99,8 @@ impl Store {
         expected: i64,
         body: Vec<u8>,
     ) -> Result<i64, ApiError> {
-        validate_project(&body)?;
         self.run(move |connection| {
+            validate_project(&body)?;
             let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
             let (owner, revision): (String, i64) = tx
                 .query_row(

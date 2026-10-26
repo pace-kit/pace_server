@@ -1,0 +1,105 @@
+{
+  "format_version": 1,
+  "game_id": "last_light",
+  "title": "The Last Light",
+  "start_room": "quay",
+  "items": [
+    { "id": "fuse", "name": "Spare fuse", "description": "A dry ceramic fuse, rescued from a supply crate." },
+    { "id": "key", "name": "Brass key", "description": "The keeper's key to the lantern stairs." }
+  ],
+  "flags": ["briefed", "repaired"],
+  "rooms": [
+    {
+      "id": "quay",
+      "name": "01 / The Quay",
+      "description": "Night is falling. A boat waits beyond the reef, but the lighthouse is dark. Search the supply crate, then find the keeper.",
+      "color": [24, 49, 68],
+      "hotspots": [
+        {
+          "id": "crate", "label": "Search supply crate", "rect": [0.08, 0.55, 0.28, 0.3], "once": true,
+          "blocked_text": "The crate is empty.", "text": "Under a folded oilskin, you find a spare fuse.",
+          "effects": [{ "type": "give_item", "item": "fuse" }]
+        },
+        {
+          "id": "workshop", "label": "Enter workshop", "rect": [0.62, 0.15, 0.3, 0.7],
+          "blocked_text": "The workshop door will not open.", "text": "Warm lamplight spills from the workshop.",
+          "outcome": { "type": "room", "room": "workshop" }
+        }
+      ]
+    },
+    {
+      "id": "workshop", "name": "02 / The Workshop",
+      "description": "The keeper studies a chart of the reef. Above the workbench, a locked stairway leads to the lantern.",
+      "color": [71, 48, 42],
+      "hotspots": [
+        {
+          "id": "quay", "label": "Return to quay", "rect": [0.04, 0.3, 0.22, 0.55],
+          "blocked_text": "You cannot leave yet.", "text": "You step back into the salt air.",
+          "outcome": { "type": "room", "room": "quay" }
+        },
+        {
+          "id": "keeper", "label": "Talk to the keeper", "rect": [0.34, 0.4, 0.28, 0.45],
+          "blocked_text": "The keeper is busy.", "text": "The keeper looks up from the chart.",
+          "outcome": { "type": "dialogue", "dialogue": "keeper" }
+        },
+        {
+          "id": "stairs", "label": "Unlock lantern stairs", "rect": [0.72, 0.12, 0.24, 0.73],
+          "requires": [{ "type": "has_item", "item": "key" }],
+          "blocked_text": "The stairway is locked. Ask the keeper for the brass key.", "text": "The brass key turns. You climb to the lantern.",
+          "outcome": { "type": "room", "room": "lantern" }
+        }
+      ]
+    },
+    {
+      "id": "lantern", "name": "03 / The Lantern",
+      "description": "The great lens is still. Fit the spare fuse into the dark control panel, then send a signal across the water.",
+      "color": [39, 60, 68],
+      "hotspots": [
+        {
+          "id": "workshop", "label": "Down to workshop", "rect": [0.04, 0.3, 0.24, 0.55],
+          "blocked_text": "The stairs are blocked.", "text": "You descend the narrow stairs.",
+          "outcome": { "type": "room", "room": "workshop" }
+        },
+        {
+          "id": "panel", "label": "Fit spare fuse", "rect": [0.35, 0.55, 0.28, 0.3], "once": true,
+          "requires": [{ "type": "has_item", "item": "fuse" }, { "type": "flag", "flag": "briefed", "value": true }],
+          "blocked_text": "You need the spare fuse from the quay and the keeper's instructions.", "text": "The fuse clicks into place. The lens begins to turn.",
+          "effects": [{ "type": "remove_item", "item": "fuse" }, { "type": "set_flag", "flag": "repaired", "value": true }]
+        },
+        {
+          "id": "beacon", "label": "Light the beacon", "rect": [0.7, 0.1, 0.26, 0.75],
+          "requires": [{ "type": "flag", "flag": "repaired", "value": true }],
+          "blocked_text": "The beacon has no power. Repair the control panel first.", "text": "A ribbon of light sweeps the reef.",
+          "outcome": { "type": "end", "ending": "safe_harbor" }
+        }
+      ]
+    }
+  ],
+  "dialogues": [
+    {
+      "id": "keeper", "start": "greeting",
+      "nodes": [
+        {
+          "id": "greeting", "speaker": "The keeper", "text": "A boat is waiting offshore. Will you help me bring her home?",
+          "choices": [
+            { "id": "help", "text": "Tell me how to fix the light.", "next": "instructions" },
+            { "id": "leave", "text": "I'll be back." }
+          ]
+        },
+        {
+          "id": "instructions", "speaker": "The keeper", "text": "Take my key. Find the spare fuse in the quay's supply crate and fit it in the lantern panel. Then light the beacon.",
+          "choices": [
+            {
+              "id": "accept", "text": "Take the key. I'll get the light working.", "once": true,
+              "effects": [{ "type": "give_item", "item": "key" }, { "type": "set_flag", "flag": "briefed", "value": true }]
+            },
+            { "id": "leave", "text": "I need a moment." }
+          ]
+        }
+      ]
+    }
+  ],
+  "endings": [
+    { "id": "safe_harbor", "text": "The boat answers with two soft bells. Guided by your light, she slips safely into harbor. The keeper waves from the quay. You brought them home. / THE END" }
+  ]
+}

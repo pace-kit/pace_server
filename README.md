@@ -7,24 +7,37 @@ Work locally, download a revision, edit, and explicitly upload against that revi
 
 ## Implementation sequence
 
-1. Storage and revision API (this layer): SQLite persistence, unchanged project
+1. Storage and revision API: SQLite persistence, unchanged project
    bytes, bounded requests, strong revision ETags, transactional writes, access control.
 2. Authentication: provision bearer identities and enable the server binary.
    The bare router fails closed without an identity; the binary always uses auth.
-3. Client integration: connect the local editor's serializer and expose conflicts
-   to the user after the local core/editor workflow is available.
+3. Client integration: the `pace_app` browser editor uploads/downloads its existing
+   draft format and offers explicit conflict decisions. The server also accepts
+   core scenes through the same revision API. See the app's project-sharing guide.
 
-## Scene compatibility prerequisite
+## Supported project formats
 
-The referenced `pace_core` main at `6ccfd6e` has no scene schema/serializer;
-`pace_app` main at `b195b90` is a demo, without project save/load. The server
-therefore validates **JSON syntax only**, up to 1 MiB (including whitespace),
-and stores/returns the original UTF-8 bytes. Unknown fields, whitespace, key order,
-and numeric spelling are preserved. The examples/tests are transport fixtures,
-not a proposed Pace scene format. Structurally invalid scenes that are valid JSON
-cannot yet be rejected: integrate the core's canonical validator when available.
-The transport does not execute scripts, dereference asset URLs, or unpack archives.
-External assets are not uploaded by this API.
+Uploads are limited to **64 MiB**, including whitespace and embedded images,
+matching the editor's project-file limit. Validation uses immutable dependencies:
+
+- **PACE core scene v1** (`format_version: 1`): `Scene::from_json` from
+  `pace_core` at `1aa2b36270b68ea6fc04c268c3d5661ec09790aa` checks shape, version,
+  stable IDs, references, geometry and dialogue exits. Unknown fields are rejected.
+- **Editor draft v1** (`format: "pace-editor-draft", version: 1`):
+  `pace_editor_format::Project::from_json` from `pace_app` at
+  `1dd8f4d8fcfb84849164a6041895dd15a1e9ef19` is the editor's own loader, extracted
+  without schema changes. It rejects malformed structures, unsupported versions,
+  unknown fields and duplicate IDs. Incomplete drafts and unresolved references
+  remain editable, just as with local save/load; this does not certify playability.
+
+The server stores/returns accepted UTF-8 bytes unchanged: no envelope, conversion,
+rewritten IDs or asset extraction. Whitespace, field order and numeric spelling
+are preserved. Embedded backgrounds travel inside the draft. Core scenes and
+drafts remain distinct contracts; runtime export/conversion is not part of sharing.
+Other JSON, runtime save slots and future versions are rejected. Previously stored
+arbitrary JSON from the initial API remains downloadable, but new writes must use
+a supported format. The transport never executes scripts or fetches asset URLs.
+Rust 1.97.1+ is required by the pinned core dependency.
 
 ## Run the authenticated server
 
@@ -53,7 +66,19 @@ PACE_AUTH_FILE=./auth.json PACE_DATABASE=./pace-projects.sqlite3 cargo run --loc
 `PACE_BIND` defaults to `127.0.0.1:3000`. TLS must be terminated by a trusted
 reverse proxy before exposing the service beyond localhost; bearer tokens confer
 access to anyone holding them. Do not log authorization headers. There is no
-permissive CORS policy or browser login flow in this layer.
+browser login flow in this layer. Cross-origin browser access is disabled unless
+`PACE_ALLOWED_ORIGINS` lists exact origins separated by commas, for example:
+
+```sh
+PACE_ALLOWED_ORIGINS=http://127.0.0.1:8080,http://localhost:8080 \
+PACE_AUTH_FILE=./auth.json PACE_DATABASE=./pace-projects.sqlite3 cargo run --locked
+```
+
+Paths, credentials and wildcard origins are rejected. Allowed preflight requests
+do not require authentication; actual project requests always do. The policy
+allows Authorization, Content-Type and If-Match, and exposes ETag and Location.
+Use a same-origin reverse proxy instead if preferred. CORS is a browser policy;
+authorization still governs all callers.
 
 For token rotation, add a new digest with the **same principal**, distribute that
 token securely, remove the old digest, and restart. Multiple distinct digests may
@@ -66,10 +91,9 @@ granting access. Do not commit token files or operator config.
 
 ## Two-client HTTP walkthrough
 
-Use a JSON file produced by the local editor when its serializer is available.
-For a transport-only smoke test, `printf '{}\n' > project.json` is sufficient;
-this does not establish scene-format compatibility. These commands use `curl`
-and `jq`, with the local token files created above:
+Use a JSON file saved by the editor, or copy
+`tests/fixtures/core-scene-v1.json` to `project.json` to exercise the canonical
+core fixture. These commands use `curl` and `jq`, with the tokens created above:
 
 ```sh
 BASE=http://127.0.0.1:3000
@@ -139,7 +163,7 @@ and [§15.5.13](https://www.rfc-editor.org/rfc/rfc9110#section-15.5.13),
 with a deliberately restricted condition syntax to require an explicit revision.
 
 Missing/invalid credentials return `401`; unknown and inaccessible projects
-both return `404`. Readers attempting writes receive `403`. Invalid JSON returns
+both return `404`. Readers attempting writes receive `403`. Invalid JSON/schema returns
 `400`, unsupported media/encoding `415`, and oversized projects `413`.
 Revision conflicts never change the stored bytes or revision.
 ACL changes are owner-only, do not change the content ETag, and are serialized
@@ -163,5 +187,7 @@ Integration tests use real HTTP sockets and temporary SQLite files, including
 independent database connections racing the same revision, two-client exchange,
 process kill/restart persistence of contents/revisions/ACLs, denied access,
 reader/writer/owner permissions, malformed/oversized (including chunked) payloads,
-and required preconditions. These are transport tests; the editor's actual
-save/load round trip remains a prerequisite for client integration.
+required preconditions, canonical core/draft fixtures, schema errors and CORS.
+The app's browser suite starts this real server and verifies local save → upload
+→ download → save equality for the complete three-room draft, including images,
+as well as two-user conflicts, explicit reconciliation and denied access.

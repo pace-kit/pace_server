@@ -146,7 +146,7 @@ async fn owner_grants_reader_writer_access_and_revokes_it() {
             .status(),
         204
     );
-    let edit = b"{\"edited_by\":\"bob\",\"scene\":{}}";
+    let edit = common::edited("Edited by Bob");
     let response = bob
         .put(&url)
         .header("If-Match", "\"1\"")
@@ -233,7 +233,7 @@ async fn each_creator_owns_only_their_own_projects() {
     let created = bob
         .post(format!("{}/v1/projects", server.base))
         .header("Content-Type", "application/json")
-        .body("{\"owner\":\"alice\"}")
+        .body(common::edited("Alice's title does not confer ownership"))
         .send()
         .await
         .unwrap();
@@ -296,7 +296,7 @@ async fn chunked_uploads_cannot_bypass_the_size_limit() {
         let mut chunk = b"4000\r\n".to_vec();
         chunk.extend(vec![b' '; 16 * 1024]);
         chunk.extend_from_slice(b"\r\n");
-        for _ in 0..65 { if socket.write_all(&chunk).is_err() { break; } }
+        for _ in 0..=pace_server::project::MAX_PROJECT_BYTES / (16 * 1024) { if socket.write_all(&chunk).is_err() { break; } }
         let _ = socket.write_all(b"2\r\n{}\r\n0\r\n\r\n");
         let mut response = [0; 2048];
         let size = socket.read(&mut response).unwrap();
