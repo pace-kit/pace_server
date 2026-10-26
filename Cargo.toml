@@ -2,16 +2,21 @@
 name = "pace_server"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.97.1"
 
 [dependencies]
 axum = "0.8"
 rusqlite = { version = "0.38", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = { version = "1", features = ["raw_value"] }
+serde_json = "1"
+pace_core = { git = "https://github.com/pace-kit/pace_core", rev = "1aa2b36270b68ea6fc04c268c3d5661ec09790aa" }
+pace_editor_format = { git = "https://github.com/pace-kit/pace_app", rev = "1dd8f4d8fcfb84849164a6041895dd15a1e9ef19" }
 sha2 = "0.10"
 subtle = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal"] }
 uuid = { version = "1", features = ["v4"] }
+tower-http = { version = "0.6", features = ["cors"] }
+url = "2"
 
 [dev-dependencies]
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }

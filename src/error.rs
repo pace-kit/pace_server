@@ -59,7 +59,7 @@ impl ApiError {
         Self::new(
             StatusCode::PAYLOAD_TOO_LARGE,
             "project_too_large",
-            "Project exceeds the 1 MiB limit",
+            "Project exceeds the 64 MiB limit",
         )
     }
 

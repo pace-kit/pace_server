@@ -8,6 +8,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let config_path = env::var("PACE_AUTH_FILE").map_err(|_| "PACE_AUTH_FILE is required")?;
     let auth_bytes = std::fs::read(config_path)?;
     let auth = Auth::from_json(&auth_bytes)?;
+    let cors = pace_server::cors::cors(&env::var("PACE_ALLOWED_ORIGINS").unwrap_or_default())?;
     let database = env::var("PACE_DATABASE").unwrap_or_else(|_| "pace-projects.sqlite3".into());
     if database.is_empty() || database == ":memory:" {
         return Err("PACE_DATABASE must name a persistent SQLite file".into());
@@ -17,7 +18,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let bind = env::var("PACE_BIND").unwrap_or_else(|_| "127.0.0.1:3000".into());
     let listener = TcpListener::bind(bind).await?;
     println!("Listening on http://{}", listener.local_addr()?);
-    axum::serve(listener, authenticated_router(store, auth))
+    axum::serve(listener, authenticated_router(store, auth).layer(cors))
         .with_graceful_shutdown(shutdown())
         .await?;
     Ok(())

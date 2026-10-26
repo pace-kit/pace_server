@@ -16,7 +16,7 @@ async fn two_clients_exchange_exact_bytes_and_stale_writes_conflict() {
     assert_eq!(response.headers()["ETag"], revision);
     assert_eq!(response.bytes().await.unwrap().as_ref(), PROJECT);
 
-    let next = b"{\"scene\":{\"nodes\":[{\"name\":\"edited\"}]},\"unknown\":true}";
+    let next = common::edited("Edited title");
     let response = second_client
         .put(&url)
         .header("If-Match", &revision)
@@ -101,14 +101,14 @@ async fn independent_database_connections_cannot_both_win_a_revision() {
         .put(&url)
         .header("If-Match", &revision)
         .header("Content-Type", "application/json")
-        .body("{\"winner\":1}")
+        .body(common::edited("First writer"))
         .send();
     let b = second
         .client
         .put(&second_url)
         .header("If-Match", &revision)
         .header("Content-Type", "application/json")
-        .body("{\"winner\":2}")
+        .body(common::edited("Second writer"))
         .send();
     let (a, b) = tokio::join!(a, b);
     let a = a.unwrap().status();
@@ -186,7 +186,7 @@ async fn malformed_and_oversized_uploads_leave_existing_project_unchanged() {
 async fn exact_size_limit_is_accepted_and_unsupported_media_is_rejected() {
     let dir = tempdir().unwrap();
     let server = Server::start(&dir.path().join("projects.db")).await;
-    let mut body = b"{}".to_vec();
+    let mut body = PROJECT.to_vec();
     body.resize(MAX_PROJECT_BYTES, b' ');
     assert_eq!(server.create(body).await.status(), 201);
     let url = format!("{}/v1/projects", server.base);
